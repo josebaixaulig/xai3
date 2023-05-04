@@ -1,0 +1,72 @@
+---
+title: "XAI 3: Model-Agnostic methods"
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+**Authors**: 
+
+* Jose Baixauli Gimenez
+* Jose Francisco Olivert Iserte
+* Kexin Jiang Chen
+
+
+# **PDP to explain the price of a house**
+
+Now we applied PDP to predict the **price** of a house from the database **kc_house_data.csv** based on the features of **bedrooms**, **bathrooms**, **sqft_living**, **sqft_lot**, **floors** and **yr_built**. We used a random forest approximation to predict the house prices and visualized the relationships of the model learned.
+
+To avoid issues with the size of the dataset, we extracted a set of random samples from the database before generating the the data for the PDP.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(plotly)
+library(reshape2)
+library(lubridate)
+library(randomForestSRC)
+
+d <- read.csv("kc_house_data.csv")
+
+sampled <- sample_n(d, 1000)
+
+sampled <- select(sampled, bedrooms, bathrooms, sqft_living, sqft_lot, floors, yr_built, price)
+
+rf <- rfsrc(price~., data=sampled)
+
+results <- select(sampled, bedrooms, bathrooms, sqft_living, floors, price)
+nr <- nrow(sampled)
+for(c in names(results)[1:4])
+{
+  for(i in 1:nr){
+    r <- sampled
+    r[[c]] <- sampled[[c]][i]
+    sal <- predict(rf, r)$predicted
+    results[[c]][i] <- sum(sal) / nr
+  }
+}
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+p1 <- ggplot(sampled, aes(x=bedrooms, y = results$bedrooms)) + geom_line() + geom_rug(alpha=0.1, sides="b") +  xlab("Bedrooms") + ylab("Prediction")
+p2 <- ggplot(sampled, aes(x=bathrooms, y = results$bathrooms)) + geom_line() + geom_rug(alpha=0.1, sides="b") +  xlab("Bathrooms") + ylab(NULL)
+p3 <- ggplot(sampled, aes(x=sqft_living , y = results$sqft_living)) + geom_line() + geom_rug(alpha=0.1, sides="b") +  xlab("sqft_living") + ylab(NULL)
+p4 <- ggplot(sampled, aes(x=floors, y = results$floors)) + geom_line() + geom_rug(alpha=0.1, sides="b") + xlab("Floors") + ylab(NULL)
+
+ggpubr::ggarrange(p1, p2, p3, p4, nrow=1)
+```
+
+The PDP shows that the estimated house price increases from 1 to 2 **bedrooms**. However, the predicted price generally decreases until 5 bedrooms, after which it increases sharply. This pattern is somewhat unexpected and may be influenced by other factors, such as the size and location of the house.
+
+The number of **bathrooms** has a positive influence on the predicted house prices. As the number of bathrooms increases, the predicted house prices also increases. This suggests that houses with more bathrooms are generally more expensive than those with fewer bathrooms. However, the predicted prices of houses with 4 or more bathrooms did not differ significantly.
+
+The PDP also shows that the **sqft_living** has a positive influence on the predicted house prices. As the square footage of the living room increases, the predicted house prices also increases and this relationship is somewhat linear. This suggests that houses with larger living areas are generally more expensive than those with smaller living areas.
+
+Finally, the estimated value of a house increases monotonically as the number of **floors** increases from 1 to 3. This may be because people generally prefer living on higher floors to avoid street noise and enjoy better views. However, other factors, such as the location and age of the house, may also influence this relationship.
+
+Overall, our analysis highlights the importance of considering multiple factors when predicting house prices. These findings can be used to inform real estate decisions, such as pricing strategies and property investments.
