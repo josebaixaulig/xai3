@@ -1,0 +1,172 @@
+---
+title: "XAI 3: Model-Agnostic methods"
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+**Authors**: 
+
+* Jose Baixauli Gimenez
+* Jose Francisco Olivert Iserte
+* Kexin Jiang Chen
+
+
+# **One dimentional Partial Dependence Plot**
+
+First of all, we applied Partial Dependence Plot (PDP) to a regression example of predicting bike rentals. We used a random forest approximation to predict the bike rentals (**cnt**) and visualized the relationships the model learned.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(plotly)
+library(reshape2)
+library(lubridate)
+library(randomForestSRC)
+
+days <- read.csv("day.csv")
+
+days$dteday <- as_date(days$dteday)
+days_since <- select(days, workingday, holiday, temp, hum, windspeed, cnt)
+days_since$days_since_2011 <- int_length(interval(ymd("2011-01-01"), days$dteday)) / (3600*24)
+days_since$SUMMER <- ifelse(days$season == 3, 1, 0)
+days_since$FALL <- ifelse(days$season == 4, 1, 0)
+days_since$WINTER <- ifelse(days$season == 1, 1, 0)
+days_since$MISTY <- ifelse(days$weathersit == 2, 1, 0)
+days_since$RAIN <- ifelse(days$weathersit == 3 | days$weathersit == 4, 1, 0)
+days_since$temp <- days_since$temp * 47 - 8
+days_since$hum <- days_since$hum * 100
+days_since$windspeed <- days_since$windspeed * 67
+```
+
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+rf <- rfsrc(cnt~., data=days_since)
+
+results <- select(days_since, days_since_2011, temp, hum, windspeed, cnt)
+nr <- nrow(days_since)
+for(c in names(results)[1:4])
+{
+  for(i in 1:nr){
+    r <- days_since
+    r[[c]] <- days_since[[c]][i]
+    sal <- predict(rf, r)$predicted
+    results[[c]][i] <- sum(sal) / nr
+  }
+}
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+p1 <- ggplot(days_since, aes(x=days_since_2011, y = results$days_since_2011)) + geom_line() + geom_rug(alpha=0.1, sides="b") + ylim(0, 6000) + xlab("Days since 2011") + ylab("Prediction")
+p2 <- ggplot(days_since, aes(x=temp, y = results$temp)) + geom_line() + geom_rug(alpha=0.1, sides="b") + ylim(0, 6000) + xlab("Temperature") + ylab(NULL) + theme(axis.text.y = element_blank())
+p3 <- ggplot(days_since, aes(x=hum , y = results$hum)) + geom_line() + geom_rug(alpha=0.1, sides="b") + ylim(0, 6000) + xlab("Humidity") + ylab(NULL)+ theme(axis.text.y = element_blank())
+p4 <- ggplot(days_since, aes(x=windspeed, y = results$windspeed)) + geom_line() + geom_rug(alpha=0.1, sides="b") + ylim(0, 6000) + xlab("Wind speed") + ylab(NULL)+ theme(axis.text.y = element_blank())
+
+
+ggpubr::ggarrange(p1, p2, p3, p4, nrow=1, common.legend = TRUE)
+```
+
+The PDP shows that the number of bike rentals increased with the number of **days since 2011**. This suggests that the longer the time since 2011, the more popular bike rentals become. This could be due to an increase in awareness of the benefits of cycling, such as improved health and reduced carbon emissions. However, the increase pattern is not linear, with a sharp increase in the beginning, followed by a plateau for around 200 days, then another sharp increase and finally drops a little bit when the number of days is above 650 approximately.
+
+**Temperature** also had a significant influence on bike rentals. The PDP shows that the number of bike rentals increas with temperature, ranging from 3000 to 5200. However, the predicted value decreases when the temperature reaches around 25 degrees. This suggests that there is an optimal temperature range for cycling, and that extreme temperatures (either too hot or too cold) may discourage people from renting bikes. The temperature that people find it comfortable to rent bikes is between 15 and 25 degrees.
+
+**Humidity** does not significantly influence the predicted bike rentals when it is below 50. However since the number of instances with humidity below 25 is small, it may limit the statistical significance of this finding. When the humidity is above 50, it has a negative influence on bike rentals as the number of bike rentals decreases almost linearly with the increasing humidity. This could be due to the discomfort caused by high humidity levels, which may discourage people from cycling.
+
+Finally, **wind speed** also has some influence on bike rentals. The PDP shows that the number of bike rentals decreases with low to moderate wind speeds, but there was no significant change with high wind speeds (above 25). However there is not many data for wind speeds above 25, which may affect the reliability of this finding.
+
+Overall, this analysis highlights the importance of considering multiple factors when predicting bike rentals. **Days since 2011**, **temperature**, **humidity**, and **wind speed** all play a role in determining the popularity of bike rentals, and should be taken into account when developing policies and strategies to promote cycling.
+
+
+
+# **Bidimensional Partial Dependency Plot**
+
+Here, we generated a 2D Partial Dependency Plot (PDP) to analyse the influence of humidity and temperature on the predicted number of bikes rented. To avoid issues with the size of the dataset, we extracted a set of random samples from the database before generating the the data for the PDP.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+set.seed(6)
+sampled <- sample_n(days_since, 40)
+temp <- sampled$temp
+hum <- sampled$hum
+th <- inner_join(data.frame(temp),data.frame(hum), by=character())
+th$p <- 0
+
+for(i in 1:nrow(th)){
+  r <- days_since
+  r[["temp"]] <- th[["temp"]][i]
+  r[["hum"]] <- th[["hum"]][i]
+  
+  sal <- predict(rf, r)$predicted
+  th[["p"]][i] <- sum(sal) / nr
+}
+
+
+#par.temp_hum = partial(rf, pred.var=c("temp", "hum"), chull = TRUE)
+
+#ggplot(par.temp_hum, aes(x=temp, y=hum)) + 
+#  geom_tile(aes(fill=yhat,height=10, width=15))
+
+ggplot(th, mapping=aes(temp, hum)) + geom_tile(mapping=aes(fill= p, width = 8, height=8)) + geom_rug()
+```
+
+The PDP shows that the number of bike rentals increases with **temperature** up to a certain point (25 degrees), after which it started to decrease. This optimal temperature range is between 15 and 25 degrees approximately. Outside of this range, the number of bike rentals decreases, with the lowest number of rentals observed at temperatures below 10 degrees.
+
+However, when considering the interaction between **temperature** and **humidity**, we found that as humidity increases, the predicted bike count decreases significantly and monotonically, regardless of the temperature range. This suggests that high humidity levels can discourage people from renting bikes, even when temperature is comfortable. This can be due to the discomfort of physical activity caused by sweating and reduced visibility.
+
+# **PDP to explain the price of a house**
+
+Now we applied PDP to predict the **price** of a house from the database **kc_house_data.csv** based on the features of **bedrooms**, **bathrooms**, **sqft_living**, **sqft_lot**, **floors** and **yr_built**. We used a random forest approximation to predict the house prices and visualized the relationships of the model learned.
+
+To avoid issues with the size of the dataset, we extracted a set of random samples from the database before generating the the data for the PDP.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(plotly)
+library(reshape2)
+library(lubridate)
+library(randomForestSRC)
+
+d <- read.csv("kc_house_data.csv")
+
+sampled <- sample_n(d, 1000)
+
+sampled <- select(sampled, bedrooms, bathrooms, sqft_living, sqft_lot, floors, yr_built, price)
+
+rf <- rfsrc(price~., data=sampled)
+
+results <- select(sampled, bedrooms, bathrooms, sqft_living, floors, price)
+nr <- nrow(sampled)
+for(c in names(results)[1:4])
+{
+  for(i in 1:nr){
+    r <- sampled
+    r[[c]] <- sampled[[c]][i]
+    sal <- predict(rf, r)$predicted
+    results[[c]][i] <- sum(sal) / nr
+  }
+}
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+p1 <- ggplot(sampled, aes(x=bedrooms, y = results$bedrooms)) + geom_line() + geom_rug(alpha=0.1, sides="b") +  xlab("Bedrooms") + ylab("Prediction")
+p2 <- ggplot(sampled, aes(x=bathrooms, y = results$bathrooms)) + geom_line() + geom_rug(alpha=0.1, sides="b") +  xlab("Bathrooms") + ylab(NULL)
+p3 <- ggplot(sampled, aes(x=sqft_living , y = results$sqft_living)) + geom_line() + geom_rug(alpha=0.1, sides="b") +  xlab("sqft_living") + ylab(NULL)
+p4 <- ggplot(sampled, aes(x=floors, y = results$floors)) + geom_line() + geom_rug(alpha=0.1, sides="b") + xlab("Floors") + ylab(NULL)
+
+ggpubr::ggarrange(p1, p2, p3, p4, nrow=1)
+```
+
+The PDP shows that the estimated house price increases from 1 to 2 **bedrooms**. However, the predicted price generally decreases until 5 bedrooms, after which it increases slightly. This pattern is somewhat unexpected and may be influenced by other factors, such as the size and location of the house.
+
+The number of **bathrooms** has a positive influence on the predicted house prices. As the number of bathrooms increases, the predicted house prices also increases. This suggests that houses with more bathrooms are generally more expensive than those with fewer bathrooms. However, the predicted prices of houses with 4 or more bathrooms did not differ significantly.
+
+The PDP also shows that the **sqft_living** has a positive influence on the predicted house prices. As the square footage of the living room increases, the predicted house prices also increases and this relationship is somewhat linear. This suggests that houses with larger living areas are generally more expensive than those with smaller living areas.
+
+Finally, the estimated value of a house increases monotonically as the number of **floors** increases from 1 to 3. This may be because people generally prefer living on higher floors to avoid street noise and enjoy better views. However, other factors, such as the location and age of the house, may also influence this relationship.
+
+Overall, our analysis highlights the importance of considering multiple factors when predicting house prices. These findings can be used to inform real estate decisions, such as pricing strategies and property investments.
+
